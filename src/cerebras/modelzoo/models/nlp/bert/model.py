@@ -111,9 +111,17 @@ class BertForPreTrainingModel(torch.nn.Module):
         return loss.sum()
 
     def forward(self, data):
+        print(f"[DEBUG] 14. MODEL: BertForPreTrainingModel.forward() [ON CSX]")
+
         next_sentence_label = data.pop("next_sentence_label", None)
         mlm_loss_scale = data.pop("mlm_loss_scale", None)
         labels = data.pop("labels")
+
+        print(f"[DEBUG] 14.1 Input shapes:")
+        if hasattr(data.get('input_ids'), 'shape'):
+            print(f"[DEBUG] 14.2   input_ids: {data['input_ids'].shape}")
+        if hasattr(labels, 'shape'):
+            print(f"[DEBUG] 14.3   labels: {labels.shape}")
 
         _, len_labels = list(labels.size())
         batch_size, seq_len = data["input_ids"].shape[:2]
@@ -129,13 +137,21 @@ class BertForPreTrainingModel(torch.nn.Module):
                 device=labels.device,
             )
 
+        print(f"[DEBUG] 14.4 Running BERT model forward...")
         mlm_logits, nsp_logits, _, _ = self.model(**data)
+
+        print(f"[DEBUG] 14.5 Model output shapes:")
+        if hasattr(mlm_logits, 'shape'):
+            print(f"[DEBUG] 14.6   mlm_logits: {mlm_logits.shape}")
+        if nsp_logits is not None and hasattr(nsp_logits, 'shape'):
+            print(f"[DEBUG] 14.7   nsp_logits: {nsp_logits.shape}")
 
         if mlm_loss_scale is not None:
             mlm_loss_scale = mlm_loss_scale.to(mlm_logits.dtype)
 
         masked_lm_mask = masked_lm_mask.to(mlm_logits.dtype)
 
+        print(f"[DEBUG] 14.8 Computing loss...")
         total_loss = self.loss_fn(
             mlm_logits,
             self.vocab_size,
@@ -147,6 +163,7 @@ class BertForPreTrainingModel(torch.nn.Module):
         )
 
         if not self.model.training and self.compute_eval_metrics:
+            print(f"[DEBUG] 14.9 Computing evaluation metrics ON CSX...")
             metric_dtype = (
                 torch.float32
                 if cstorch.amp.is_cbfloat16_tensor(mlm_logits)
@@ -155,6 +172,7 @@ class BertForPreTrainingModel(torch.nn.Module):
             if not self.disable_nsp:
                 nsp_label = next_sentence_label.clone()
                 nsp_pred = nsp_logits.argmax(-1).int()
+                print(f"[DEBUG] 14.10 NSP predictions computed ON CSX")
                 # eval/accuracy_cls
                 self.accuracy_metric_cls(
                     labels=nsp_label,
@@ -163,6 +181,7 @@ class BertForPreTrainingModel(torch.nn.Module):
                 )
 
             mlm_preds = mlm_logits.argmax(-1).int()
+            print(f"[DEBUG] 14.11 MLM predictions computed ON CSX")
 
             mlm_labels = labels.clone()
             mlm_weights = masked_lm_mask.clone()
@@ -170,6 +189,7 @@ class BertForPreTrainingModel(torch.nn.Module):
                 mlm_labels, mlm_logits, mlm_weights
             )
 
+            print(f"[DEBUG] 14.12 Accumulating metrics ON CSX...")
             # eval/accuracy_masked_lm
             self.accuracy_metric_mlm(
                 labels=mlm_labels,
@@ -184,5 +204,7 @@ class BertForPreTrainingModel(torch.nn.Module):
                 weights=mlm_weights,
                 dtype=metric_dtype,
             )
+            print(f"[DEBUG] 14.13 Metrics accumulated (still ON CSX)")
 
+        print(f"[DEBUG] 14.14 Forward pass complete!")
         return total_loss

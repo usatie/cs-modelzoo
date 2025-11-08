@@ -64,7 +64,14 @@ def run_trainer(mode: ModeT, params: Union[Dict[str, Any], BaseConfig]):
             If legacy keys are detected, they will be automatically converted
             to the new format.
     """
+    print("\n" + "="*80)
+    print("[DEBUG] 4. FUNCTION: trainer.utils.run_trainer()")
+    print("="*80)
+    print(f"[DEBUG] 4.1 Mode: {mode}")
+    print(f"[DEBUG] 4.2 Params type: {type(params)}")
+
     if isinstance(params, dict) and is_legacy_params(params):
+        print(f"[DEBUG] 4.3 Converting legacy params to new format...")
         warn(
             f"Detected that legacy params are being used. "
             f"Automatically converting params to new format. "
@@ -80,11 +87,14 @@ def run_trainer(mode: ModeT, params: Union[Dict[str, Any], BaseConfig]):
 
     if isinstance(params, BaseConfig):
         config = params
+        print(f"[DEBUG] 4.4 Creating trainer from BaseConfig")
         try:
+            print(f"[DEBUG] 4.5 Calling configure_trainer_from_config()...")
             trainer = configure_trainer_from_config(config, mode)
         except:
             import json
 
+            print(f"[DEBUG] 4.6 ERROR: Failed to configure trainer!")
             warn(
                 f"Failed to configure trainer from config:\n"
                 f"{json.dumps(config.model_dump(), sort_keys=False, indent=4)}"
@@ -92,12 +102,14 @@ def run_trainer(mode: ModeT, params: Union[Dict[str, Any], BaseConfig]):
             raise
 
         if mode == "eval":
+            print(f"[DEBUG] 4.7 Mode=eval: Creating validation dataloader...")
             if not config.validate:
                 raise RuntimeError(
                     "Validation requested but config is missing `validate` section. "
                     "Please add a `validate` section to your trainer configuration."
                 )
 
+            print(f"[DEBUG] 4.8 Calling trainer.validate()...\n")
             trainer.validate(
                 val_dataloader=create_dataloader_from_config(
                     config.validate.val_dataloader
@@ -144,6 +156,7 @@ def run_trainer(mode: ModeT, params: Union[Dict[str, Any], BaseConfig]):
             )
 
         elif mode in ("train", "train_and_eval"):
+            print(f"[DEBUG] 4.7 Mode={mode}: Creating training dataloader...")
             if not config.fit:
                 raise RuntimeError(
                     "Fit requested but config is missing `fit` section. "
@@ -157,9 +170,11 @@ def run_trainer(mode: ModeT, params: Union[Dict[str, Any], BaseConfig]):
 
             if mode == "train":
                 # Disable all validation during training including eval harness
+                print(f"[DEBUG] 4.8 Disabling validation during training...")
                 trainer.loop.eval_frequency = None
             else:
                 if config.fit.val_dataloader is not None:
+                    print(f"[DEBUG] 4.8 Creating validation dataloader...")
                     val_dataloader = list(
                         map(
                             create_dataloader_from_config,
@@ -167,6 +182,7 @@ def run_trainer(mode: ModeT, params: Union[Dict[str, Any], BaseConfig]):
                         )
                     )
 
+            print(f"[DEBUG] 4.9 Calling trainer.fit()...\n")
             trainer.fit(train_dataloader, val_dataloader, config.fit.ckpt_path)
 
         else:
@@ -288,6 +304,12 @@ def configure_trainer_from_config(
         mode: The mode that the trainer is being configured for. If None, no
             mode-specific modifications are applied.
     """
+    print("\n" + "="*80)
+    print("[DEBUG] 5. FUNCTION: trainer.utils.configure_trainer_from_config()")
+    print("="*80)
+    print(f"[DEBUG] 5.1 Mode: {mode}")
+    print(f"[DEBUG] 5.2 Creating Trainer instance...")
+
     # pylint: disable=unused-import
     import cerebras.modelzoo.trainer.extensions  # noqa
     from cerebras.modelzoo.trainer import Trainer

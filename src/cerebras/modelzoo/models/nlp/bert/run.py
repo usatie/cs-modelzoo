@@ -24,9 +24,14 @@ if __name__ == '__main__':
 
     from cerebras.modelzoo.common.run_utils import run
 
+    print("\n" + "="*80)
+    print("[DEBUG] 1. ENTRY POINT: models/nlp/bert/run.py")
+    print("="*80 + "\n")
+
     warnings.warn(
         "Running models using run.py is deprecated. Please switch to using the ModelZoo CLI. "
         "See https://training-docs.cerebras.ai/model-zoo/cli-overview for more details."
     )
 
+    print("[DEBUG] 1.1 Calling run_utils.run()")
     run()

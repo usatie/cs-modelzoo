@@ -41,6 +41,11 @@ class BackendCallback(CoreCallback):
         self._workflow_started = False
 
     def pre_setup(self, trainer):
+        print("\n" + "="*80)
+        print("[DEBUG] 6. CALLBACK: BackendCallback.pre_setup()")
+        print("="*80)
+        print(f"[DEBUG] 6.1 Device type: {self.device}")
+
         if self.backend is None:
             if isinstance(self.device, str):
                 accepted_device_types = {"CSX", "CPU", "GPU"}
@@ -54,10 +59,13 @@ class BackendCallback(CoreCallback):
                     raise_exception=False, raise_warning=False
                 )
                 if backend is None:
+                    print(f"[DEBUG] 6.2 Creating new backend: cstorch.backend('{self.device}', ...)")
                     trainer.backend = cstorch.backend(
                         self.device, trainer.artifact_dir
                     )
+                    print(f"[DEBUG] 6.3 Backend created: {trainer.backend}")
                 else:
+                    print(f"[DEBUG] 6.2 Using existing backend: {backend}")
                     if backend.backend_type.name.lower() != self.device.lower():
                         raise ValueError(
                             "Cannot instantiate multiple trainers with different device types"
@@ -93,6 +101,10 @@ class BackendCallback(CoreCallback):
             # trainer's artifact directory
             trainer.backend.artifact_dir = trainer.artifact_dir
 
+        print(f"[DEBUG] 6.4 Backend type: {trainer.backend.backend_type if hasattr(trainer.backend, 'backend_type') else 'N/A'}")
+        print(f"[DEBUG] 6.5 Is CSX: {trainer.backend.is_csx if hasattr(trainer.backend, 'is_csx') else 'N/A'}")
+        print(f"[DEBUG] 6.6 Is E2E execution: {trainer.backend.is_e2e_execution if hasattr(trainer.backend, 'is_e2e_execution') else 'N/A'}\n")
+
     @contextmanager
     def workflow_context(self, trainer, lock_resources=True):
         """Context manager to start and stop the workflow for the trainer.
@@ -100,17 +112,22 @@ class BackendCallback(CoreCallback):
             trainer (Trainer): The trainer object.
             lock_resources (bool): Whether to reserve CSX cluster resources for the entire run.
         """
+        print(f"[DEBUG] 6.7 Entering workflow_context (lock_resources={lock_resources})")
+
         if (
             not self._workflow_started
             and trainer.backend.is_csx
             and trainer.backend.is_e2e_execution
         ):
+            print(f"[DEBUG] 6.8 Starting CSX workflow...")
             self._workflow_started = trainer.backend.cluster.start_workflow(
                 lock_resources=lock_resources,
             )
+            print(f"[DEBUG] 6.9 CSX workflow started: {self._workflow_started}")
 
             yield
         else:
+            print(f"[DEBUG] 6.8 Workflow already started or not CSX - skipping")
             yield
 
     def on_enter_fit(

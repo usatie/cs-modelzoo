@@ -60,8 +60,23 @@ def run(
         extra_args_parser_fn: An optional callable that adds any
             extra parser args not covered in `get_parser` fn.
     """
+    print("\n" + "="*80)
+    print("[DEBUG] 2. FUNCTION: run_utils.run()")
+    print("="*80)
+
     parent = inspect.getouterframes(inspect.currentframe())[1]
+    print(f"[DEBUG] 2.1 Parent script: {parent.filename}")
+    print(f"[DEBUG] 2.2 Parsing CLI arguments...")
+
     params = get_params_from_args(extra_args_parser_fn)
+
+    print(f"[DEBUG] 2.3 Parsed params keys: {list(params.keys())}")
+    if "runconfig" in params:
+        print(f"[DEBUG] 2.4 RunConfig keys: {list(params['runconfig'].keys())}")
+        print(f"[DEBUG] 2.5 Mode: {params['runconfig'].get('mode', 'N/A')}")
+        print(f"[DEBUG] 2.6 Device: {params['runconfig'].get('target_device', 'N/A')}")
+
+    print(f"[DEBUG] 2.7 Calling run_utils.main()...\n")
     main(
         params,
         script=parent.filename,
@@ -84,9 +99,15 @@ def main(
         extra_args_parser_fn: An optional callable that adds any
             extra parser args not covered in `get_parser` fn.
     """
+    print("\n" + "="*80)
+    print("[DEBUG] 3. FUNCTION: run_utils.main()")
+    print("="*80)
+
     if not script:
         parent = inspect.getouterframes(inspect.currentframe())[1]
         script = parent.filename
+
+    print(f"[DEBUG] 3.1 Script path: {script}")
 
     if (
         "runconfig" in params
@@ -97,6 +118,7 @@ def main(
         and os.environ.get("LOCAL_RANK") is None
     ):
         # use torchrun to launch distributed training
+        print(f"[DEBUG] 3.2 Launching distributed GPU training with torchrun")
         torchrun(script, sys.argv[1:])
         return None
 
@@ -108,15 +130,20 @@ def main(
     )
 
     runconfig_params = params["runconfig"]
+    print(f"[DEBUG] 3.2 Validating runconfig params...")
     RunConfigParamsValidator(extra_args_parser_fn).validate(runconfig_params)
     mode = runconfig_params["mode"]
+    print(f"[DEBUG] 3.3 Execution mode: {mode}")
 
     # Recursively update the params with the runconfig
     if "runconfig" in params and "trainer" in params:
+        print(f"[DEBUG] 3.4 Injecting CLI args to trainer params...")
         params = inject_cli_args_to_trainer_params(
             params.pop("runconfig"), params
         )
         if RestartableTrainer.is_restart_config(params):
+            print(f"[DEBUG] 3.5 Using RestartableTrainer")
             return RestartableTrainer(params).run_trainer(mode)
 
+    print(f"[DEBUG] 3.6 Calling trainer.utils.run_trainer(mode={mode})...\n")
     return run_trainer(mode, params)

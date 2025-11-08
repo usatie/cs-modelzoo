@@ -672,21 +672,28 @@ class Trainer:
         Returns:
             A dictionary containing the loss and any other outputs.
         """
+        # NOTE: This will only print on the first iteration due to @cstorch.trace
+        print(f"[DEBUG] 10. FUNCTION: Trainer.training_step() [TRACED - CSX]")
 
         self.call("on_train_step_start", self.model, batch)
 
+        print(f"[DEBUG] 10.1 Calling forward()...")
         outputs = self.forward(batch)
+
+        print(f"[DEBUG] 10.2 Forward complete. Calling backward()...")
         self.backward(outputs)
 
         # Only run the optimizer step if an optimizer was defined
         # and we should run the optimizer step
         if self.optimizer and self.should_run_optimizer_step:
+            print(f"[DEBUG] 10.3 Running optimizer step...")
             self.optimizer_step()
             self.optimizer_zero_grad()
             self.schedulers_step()
 
         self.call("on_train_step_end", self.model, outputs, batch)
 
+        print(f"[DEBUG] 10.4 Training step complete!")
         return outputs
 
     @final
@@ -700,6 +707,8 @@ class Trainer:
         Returns:
             A dictionary containing the loss and any other outputs.
         """
+        print(f"[DEBUG] 11. FUNCTION: Trainer.forward() [ON CSX]")
+
         if self.precision:
             ctx = self.precision.autocast_context_manager()
         else:
@@ -711,8 +720,14 @@ class Trainer:
 
             self.call("on_before_forward", self.model, batch, args, kwargs)
 
+            print(f"[DEBUG] 11.1 Executing compiled_model() ON CSX...")
             output = self.compiled_model(*args, **kwargs)
+            print(f"[DEBUG] 11.2 CSX execution complete!")
+
             outputs = convert_output_to_dict(output)
+
+            if 'loss' in outputs and hasattr(outputs['loss'], 'shape'):
+                print(f"[DEBUG] 11.3 Loss: shape={outputs['loss'].shape}, dtype={outputs['loss'].dtype}")
 
             self.call("on_after_forward", self.model, outputs, batch)
 
@@ -877,6 +892,13 @@ class Trainer:
 
     @final
     def _run_train(self, train_dataloader, loop, loop_idx=0):
+        print("\n" + "="*80)
+        print(f"[DEBUG] 9. FUNCTION: Trainer._run_train() - Loop {loop_idx}")
+        print("="*80)
+        print(f"[DEBUG] 9.1 Train dataloader: {type(train_dataloader)}")
+        print(f"[DEBUG] 9.2 Total train steps: {self.schedule.train_steps}")
+        print(f"[DEBUG] 9.3 Checkpoint steps: {self.schedule.checkpoint_steps}")
+
         if not isinstance(loop, TrainingLoop):
             raise TypeError(
                 f"Expected loop to be an instance of TrainingLoop. "
@@ -890,6 +912,7 @@ class Trainer:
                 "on_train_start", self.model, train_dataloader, loop, loop_idx
             )
 
+            print(f"[DEBUG] 9.4 Creating DataExecutor...")
             self.executor = cstorch.utils.data.DataExecutor(
                 train_dataloader,
                 num_steps=self.schedule.train_steps,
@@ -897,8 +920,20 @@ class Trainer:
                 activation_steps=self.activation_steps,
                 profiler_activities=[],  # Don't use data executor's profiler
             )
+            print(f"[DEBUG] 9.5 DataExecutor created. Starting training loop...\n")
 
             for batch_idx, batch in enumerate(self.executor):
+                if batch_idx == 0:
+                    print(f"[DEBUG] 9.6 FIRST BATCH (batch_idx={batch_idx})")
+                    print(f"[DEBUG] 9.7 Batch type: {type(batch)}")
+                    if isinstance(batch, dict):
+                        print(f"[DEBUG] 9.8 Batch keys: {list(batch.keys())}")
+                        for key, val in batch.items():
+                            if hasattr(val, 'shape'):
+                                print(f"[DEBUG] 9.9   {key}: shape={val.shape}, dtype={val.dtype}")
+
+                if batch_idx % 10 == 0:  # Print every 10 batches
+                    print(f"[DEBUG] 9.10 Processing batch {batch_idx}...")
                 if self.early_exit.should_exit:
                     break
 
@@ -910,6 +945,7 @@ class Trainer:
                     "on_train_batch_end", self.model, outputs, batch, batch_idx
                 )
 
+            print(f"[DEBUG] 9.11 Training loop complete!\n")
             self.call("on_train_end", self.model, loop, loop_idx)
 
         self.executor = None
@@ -933,10 +969,17 @@ class Trainer:
         Returns:
             A dictionary containing the loss and any other outputs.
         """
+        # NOTE: This will only print on first iteration due to @cstorch.trace
+        print(f"[DEBUG] 13. FUNCTION: Trainer.validation_step() [TRACED - CSX]")
+
         self.call(loop.on_step_start_hook, self.model, batch)
+
+        print(f"[DEBUG] 13.1 Calling forward() for validation...")
         outputs = self.forward(batch)
+
         self.call(loop.on_step_end_hook, self.model, outputs, batch)
 
+        print(f"[DEBUG] 13.2 Validation step complete!")
         return outputs
 
     @final
@@ -962,6 +1005,12 @@ class Trainer:
                 Note, this should only be provided if the loop callback provided in
                 the constructor is not sufficient.
         """
+        print("\n" + "="*80)
+        print("[DEBUG] 12. FUNCTION: Trainer.validate()")
+        print("="*80)
+        print(f"[DEBUG] 12.1 Val dataloader: {type(val_dataloader)}")
+        print(f"[DEBUG] 12.2 Checkpoint path: {ckpt_path}")
+
         if not isinstance(val_dataloader, cstorch.utils.data.DataLoader):
             raise TypeError(
                 f"val_dataloader must be a cstorch.utils.data.DataLoader. "
@@ -990,6 +1039,7 @@ class Trainer:
 
             self.call("on_enter_validate", stack, val_dataloader, loop)
 
+            print(f"[DEBUG] 12.3 Loading checkpoint if needed...")
             self.load_checkpoint(ckpt_path)
 
             self.call(loop.on_start_hook, self.model, val_dataloader, loop)
@@ -997,13 +1047,19 @@ class Trainer:
             # For every validation run we want to iterate the dataloader from
             # the scratch, so we make a shallow copy of the validation dataloader,
             # so the streamer will treat it as new dataloader.
+            print(f"[DEBUG] 12.4 Creating DataExecutor for validation...")
             self.executor = cstorch.utils.data.DataExecutor(
                 copy(val_dataloader),
                 num_steps=loop.eval_steps,
                 profiler_activities=[],  # Don't use data executor's profiler
             )
+            print(f"[DEBUG] 12.5 Starting validation loop...")
 
             for batch_idx, batch in enumerate(self.executor):
+                if batch_idx == 0:
+                    print(f"[DEBUG] 12.6 FIRST VALIDATION BATCH")
+                    if isinstance(batch, dict):
+                        print(f"[DEBUG] 12.7 Batch keys: {list(batch.keys())}")
                 if self.early_exit.should_exit:
                     break
 
@@ -1021,7 +1077,9 @@ class Trainer:
                     batch_idx,
                 )
 
+            print(f"[DEBUG] 12.8 Validation loop complete!")
             self.call(loop.on_end_hook, self.model, loop)
+            print(f"[DEBUG] 12.9 Calling on_validate_end callbacks...\n")
 
         self.executor = None
 
@@ -1147,19 +1205,31 @@ class Trainer:
         The checkpoint state dict is constructed by various callbacks
         that implement the `on_save_checkpoint` method.
         """
+        print("\n" + "="*80)
+        print("[DEBUG] 16. FUNCTION: Trainer.save_checkpoint()")
+        print("="*80)
+        print(f"[DEBUG] 16.1 Global step: {self.global_step}")
+
         state_dict = {}
 
+        print(f"[DEBUG] 16.2 Calling on_save_checkpoint callbacks...")
         self.call("on_save_checkpoint", state_dict)
+        print(f"[DEBUG] 16.3 State dict keys: {list(state_dict.keys())}")
+
         self.call("postprocess_checkpoint", state_dict)
 
         ckpt_path = self.checkpoint.get_checkpoint_path(self.global_step)
+        print(f"[DEBUG] 16.4 Checkpoint path: {ckpt_path}")
 
+        print(f"[DEBUG] 16.5 Saving checkpoint with cstorch.save()...")
         cstorch.save(state_dict, ckpt_path)
+        print(f"[DEBUG] 16.6 Checkpoint saved!")
 
         self.call("on_after_save_checkpoint", ckpt_path)
 
         # Save trainer state to a checkpoint if autorestart is enabled
         if self.autorestart.enabled:
+            print(f"[DEBUG] 16.7 Autorestart enabled - saving trainer state...")
             state_dict = cstorch.load(ckpt_path)
             state_dict["__trainer_state__"] = {}
             self.call("on_save_trainer_state", state_dict["__trainer_state__"])
@@ -1172,10 +1242,13 @@ class Trainer:
                 cstorch.save(state_dict, tmp_filepath)
                 tmp_filepath.rename(self.autorestart.trainer_state_file)
 
+            print(f"[DEBUG] 16.8 Trainer state saved!")
             self.call(
                 "on_after_save_trainer_state",
                 self.autorestart.trainer_state_file,
             )
+
+        print(f"[DEBUG] 16.9 Checkpoint complete!\n")
 
     @final
     def load_checkpoint(self, ckpt_path: Optional[str] = None):
@@ -1189,24 +1262,39 @@ class Trainer:
                 If not provided and `autoload_last_checkpoint` is True,
                 then the latest checkpoint is loaded
         """
+        print("\n" + "="*80)
+        print("[DEBUG] 8. FUNCTION: Trainer.load_checkpoint()")
+        print("="*80)
+        print(f"[DEBUG] 8.1 Checkpoint path: {ckpt_path}")
+        print(f"[DEBUG] 8.2 Is E2E execution: {self.backend.is_e2e_execution}")
+
         # Don't load a checkpoint if compile/validate only
         if not self.backend.is_e2e_execution:
+            print(f"[DEBUG] 8.3 Skipping checkpoint load (not E2E execution)\n")
             return
+
         if ckpt_path is Ellipsis and self.checkpoint.autoload_last_checkpoint:
             ckpt_path = self.checkpoint.get_latest_checkpoint(self)
+            print(f"[DEBUG] 8.4 Auto-detected latest checkpoint: {ckpt_path}")
+
         if not ckpt_path or ckpt_path is Ellipsis:
+            print(f"[DEBUG] 8.5 No checkpoint to load\n")
             self.call("on_before_load_checkpoint", None)
             return
 
+        print(f"[DEBUG] 8.6 Loading checkpoint with cstorch.load()...")
         self.call("on_before_load_checkpoint", ckpt_path)
 
         state_dict = cstorch.load(ckpt_path)
+        print(f"[DEBUG] 8.7 Checkpoint loaded. Keys: {list(state_dict.keys())}")
 
         if "__trainer_state__" in state_dict:
+            print(f"[DEBUG] 8.8 Found trainer state in checkpoint")
             self.call(
                 "on_load_trainer_state", state_dict.pop("__trainer_state__")
             )
 
         self.call("preprocess_checkpoint", state_dict)
-
+        print(f"[DEBUG] 8.9 Calling on_load_checkpoint callbacks...")
         self.call("on_load_checkpoint", state_dict)
+        print(f"[DEBUG] 8.10 Checkpoint loading complete!\n")
