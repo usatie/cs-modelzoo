@@ -603,6 +603,7 @@ def main():
 
     # Set the 16 bit dtype we want the automatic mixed precision module to use
     cstorch.amp.set_half_dtype(params["model"].get("fp16_type", "float16"))
+    params["model"].remove("fp16_type")
 
     # Initialize model (config_validation returns the Config Class if it finds one)
     with backend.device:
